@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/zelda_like.dir/src/main.cpp.o CMakeFiles/zelda_like.dir/src/engine/Engine.cpp.o CMakeFiles/zelda_like.dir/src/game/Player.cpp.o -o zelda_like  /usr/lib/x86_64-linux-gnu/libSDL2.so 
