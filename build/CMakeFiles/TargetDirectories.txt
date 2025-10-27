@@ -1,0 +1,3 @@
+/home/adam/zelda-like/build/CMakeFiles/zelda_like.dir
+/home/adam/zelda-like/build/CMakeFiles/edit_cache.dir
+/home/adam/zelda-like/build/CMakeFiles/rebuild_cache.dir
