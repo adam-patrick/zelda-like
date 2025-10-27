@@ -1,82 +1,119 @@
-# Zelda-Like (C++ / SDL2)
+# Zelda-Like Engine
 
-A **2D top-down action adventure game** inspired by *The Legend of Zelda: A Link to the Past*, written entirely in **modern C++** using **SDL2**.
+A small 2D adventure engine built in C++17 with SDL2. The long-term goal is a classic top-down Zelda-style game, all written by hand (no Unity/Godot). This README describes the current working state at the end of Milestone 6.
 
-This project is being built step-by-step **with the help of ChatGPT**, focusing on clean architecture, readability, and an educational approach to writing a simple yet functional 2D game engine from scratch.
+================================
+Milestone 6 Status (Current Build)
+================================
 
----
+Milestone 6 is our first stable playable slice. The engine now:
+- Opens an SDL2 window and runs a main loop
+- Uses a fixed timestep update (60 FPS target)
+- Reads keyboard input
+  - Move: W / A / S / D or Arrow Keys
+  - Attack: Space or J
+  - Quit: Esc
+- Moves a player character and blocks movement against solid tiles
+- Spawns and updates a short-lived attack hitbox for basic melee
+- Has a test enemy you can hit and "kill"
+- Supports transitioning between two rooms (north/south door gaps)
+- Has a camera that follows the player and clamps to the room bounds
+- Renders using solid-colored rectangles (no textures yet)
 
-## 🎯 Current Progress
+This is our engine baseline going forward.
 
-### ✅ Completed Milestones
-1. **Milestone 1 – Core Engine Loop**
-   - SDL2 initialization (window, renderer, input)
-   - Fixed timestep 60 FPS logic
-   - Clean shutdown
+-------------
+Project Layout
+-------------
 
-2. **Milestone 2 – Player Movement**
-   - Player entity rendered as a sprite (yellow square)
-   - Keyboard input for 4-directional movement
-   - Deterministic update loop
+All gameplay/engine code currently lives under src/engine/.
 
-3. **Milestone 3 – Tilemap & Collision**
-   - Simple 15x10 tile map (16x16 tiles)
-   - Blue walls and dark floor
-   - Player collides with solid tiles
-
-4. **Milestone 4 – Enemy Entity**
-   - Enemy entity with HP, rendered as red square
-   - Static placement in world
-
-5. **Milestone 5 – Player Attack / Combat**
-   - Spacebar/J triggers a sword swing (yellow hitbox)
-   - Enemies take damage and despawn at 0 HP
-   - Attack cooldown and duration system
-
----
-
-## 🧭 Upcoming Milestones
-
-6. **Camera & Room Transitions** – Smooth scrolling between rooms  
-7. **HUD & Hearts System** – Player HP, attack UI, and status icons  
-8. **Dialogue Boxes & Interaction** – NPC conversations and signs  
-9. **Save / Load System** – Basic persistence for player progress  
-10. **Audio** – Sound effects and music via SDL_mixer
-
----
-
-## 🛠️ Build Instructions
-
-### 🐧 Linux / WSL
-```bash
-sudo apt install build-essential cmake libsdl2-dev
-mkdir build && cd build
-cmake ..
-cmake --build .
-./zelda_like
-```
-
-### 🪟 Windows (future support)
-SDL2 runtime and development libraries will be bundled under `external/` for MSVC or MinGW builds.
-
----
-
-## 📁 Project Structure
-
-```
 src/
-├─ engine/        → window, renderer, input, timing
-├─ game/          → player, enemies, maps, combat
-└─ main.cpp       → entry point
-```
+  main.cpp
+  engine/
+    Engine.h
+    Engine.cpp
+    Camera.h
+    Camera.cpp
+    RoomManager.h
+    RoomManager.cpp
+    TileMap.h
 
----
+Summary of responsibilities:
 
-## 📘 About the Collaboration
+Engine
+- Owns init(), run(), shutdown()
+- Handles input, fixed-step update, rendering
+- Manages player, enemy, attacks
+- Asks RoomManager for the current TileMap
+- Calls Camera to follow the player and clamp view
+- Handles room transitions (north/south doorway logic)
 
-This project is being developed with assistance from **ChatGPT (OpenAI)** to serve as a transparent, learning-friendly example of building a retro-style game engine from scratch — emphasizing clarity, maintainability, and incremental design.
+Camera
+- Holds camera x/y and viewport size
+- Follows the player position
+- Clamps so we don't scroll past the room edges
+- Exposes getViewRect() so render code knows what part of the world to draw
 
----
+RoomManager
+- Holds a small list of rooms (right now: 2 test rooms)
+- Exposes currentMap()
+- goNorth() / goSouth() to change active room index
+- debugInitRooms() builds simple rooms in code at startup so there's always something to render
 
-© 2025 Adam Patrick.  
-Built with ❤️ + C++ + SDL2 + ChatGPT.
+TileMap
+- A tile grid for a single room
+- Each tile is just an int: 0 = floor (walkable), 1 = wall (blocked)
+- rectCollidesSolid() is used for movement blocking
+- getTileId() is used for render color
+- TILE_SIZE = 16px
+
+Player / Enemy / Attack
+- Player is a solid-color rectangle with movement speed, cooldown for attacks, etc.
+- Enemy is a solid-color rectangle with HP. When HP <= 0, we push it offscreen.
+- PlayerAttack is just a short-lived hitbox rectangle that damages the enemy if they overlap.
+
+Controls
+--------
+Move:    W / A / S / D or Arrow Keys
+Attack:  Space or J
+Quit:    Esc
+
+Build Instructions (Linux / SDL2 dev packages)
+----------------------------------------------
+
+1. Install SDL2 development headers (example for Debian/Ubuntu style distros):
+   sudo apt install libsdl2-dev
+
+2. Configure and build:
+   mkdir build
+   cd build
+   cmake ..
+   make
+
+3. Run:
+   ./zelda_like
+
+CMake expects these sources:
+- src/main.cpp
+- src/engine/Engine.cpp
+- src/engine/Camera.cpp
+- src/engine/RoomManager.cpp
+Plus the headers in src/engine/.
+
+---------------------
+Next Milestone Goals
+---------------------
+
+Planned next steps (Milestone 7+):
+- Replace colored rectangles with textured tiles and sprites
+- Add east/west room transitions
+- Start basic enemy movement / patrol AI
+- Optional: HUD (player health, etc.)
+
+-----------------
+License / Notice
+-----------------
+
+© 2025 Adam. All Rights Reserved.
+For personal/educational use while developing this project. Not licensed for redistribution/commercial use yet.
