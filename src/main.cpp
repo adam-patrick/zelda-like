@@ -1,14 +1,13 @@
+#include <SDL2/SDL.h>
 #include "engine/Engine.h"
 
-int main()
+int main(int, char**)
 {
-    constexpr int WINDOW_WIDTH  = 800;
-    constexpr int WINDOW_HEIGHT = 480;
-    constexpr bool FULLSCREEN   = false;
-
     zelda::engine::Engine engine;
-    if (!engine.init("Zelda-Like Prototype", WINDOW_WIDTH, WINDOW_HEIGHT, FULLSCREEN))
+    if (!engine.init("Milestone 6", 640, 480, false))
+    {
         return 1;
+    }
 
     engine.run();
     engine.shutdown();

@@ -1,5 +1,4 @@
 #include "Engine.h"
-#include <algorithm>
 
 using namespace zelda;
 
@@ -8,7 +7,7 @@ namespace zelda::engine
     Engine::Engine() {}
     Engine::~Engine() { shutdown(); }
 
-    bool Engine::init(const char* title, int windowWidth, int windowHeight, bool fullscreen)
+    bool Engine::init(const char *title, int windowWidth, int windowHeight, bool fullscreen)
     {
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS) != 0)
             return false;
@@ -24,23 +23,47 @@ namespace zelda::engine
             windowWidth,
             windowHeight,
             flags);
-        if (!m_window) return false;
+        if (!m_window)
+            return false;
 
         m_renderer = SDL_CreateRenderer(
             m_window,
             -1,
             SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-        if (!m_renderer) return false;
+        if (!m_renderer)
+            return false;
 
         m_windowWidth  = windowWidth;
         m_windowHeight = windowHeight;
 
+        // camera starts same size as window
+        m_camera.width  = windowWidth;
+        m_camera.height = windowHeight;
+
+        // player spawn
         m_player.x = 64.0f;
         m_player.y = 64.0f;
 
-        m_lastTickMs = SDL_GetTicks();
+        // enemy so we can see it
+        m_enemy.x = 128.0f;
+        m_enemy.y = 96.0f;
+        m_enemy.hp = 3;
+
+        // --- ROOM SETUP (Milestone 6 baseline) ---
+        // create 2 simple rooms with a border wall and door gaps
+        m_rooms.debugInitRooms(/*w=*/10, /*h=*/8);
+
+        // sync camera with current room bounds so initial view is valid
+        {
+            game::TileMap &map = m_rooms.currentMap();
+            int mapWidthPx  = map.width()  * game::TileMap::TILE_SIZE;
+            int mapHeightPx = map.height() * game::TileMap::TILE_SIZE;
+            m_camera.follow(m_player.x, m_player.y, mapWidthPx, mapHeightPx);
+        }
+
+        m_lastTickMs     = SDL_GetTicks();
         m_accumulatorSec = 0.0f;
-        m_running = true;
+        m_running        = true;
         return true;
     }
 
@@ -73,8 +96,16 @@ namespace zelda::engine
 
     void Engine::shutdown()
     {
-        if (m_renderer) { SDL_DestroyRenderer(m_renderer); m_renderer = nullptr; }
-        if (m_window)   { SDL_DestroyWindow(m_window);     m_window = nullptr; }
+        if (m_renderer)
+        {
+            SDL_DestroyRenderer(m_renderer);
+            m_renderer = nullptr;
+        }
+        if (m_window)
+        {
+            SDL_DestroyWindow(m_window);
+            m_window = nullptr;
+        }
         SDL_Quit();
     }
 
@@ -89,7 +120,7 @@ namespace zelda::engine
                 m_running = false;
         }
 
-        const Uint8* keys = SDL_GetKeyboardState(nullptr);
+        const Uint8 *keys = SDL_GetKeyboardState(nullptr);
         m_inputUp    = keys[SDL_SCANCODE_UP]    || keys[SDL_SCANCODE_W];
         m_inputDown  = keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S];
         m_inputLeft  = keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_A];
@@ -106,13 +137,19 @@ namespace zelda::engine
 
     void Engine::updateFixedStep()
     {
+        // movement intent from input
         m_player.moveUp    = m_inputUp;
         m_player.moveDown  = m_inputDown;
         m_player.moveLeft  = m_inputLeft;
         m_player.moveRight = m_inputRight;
 
+        // move with collision
         movePlayerWithCollision(TARGET_DT_SEC);
 
+        // attempt room transition (north/south doors)
+        handleRoomTransition();
+
+        // attack cooldown timer
         if (m_player.attackCooldown > 0.0f)
         {
             m_player.attackCooldown -= TARGET_DT_SEC;
@@ -120,32 +157,133 @@ namespace zelda::engine
                 m_player.attacking = false;
         }
 
+        // camera follows player within current room bounds
+        {
+            game::TileMap &map = m_rooms.currentMap();
+            int mapWidthPx  = map.width()  * game::TileMap::TILE_SIZE;
+            int mapHeightPx = map.height() * game::TileMap::TILE_SIZE;
+            m_camera.follow(m_player.x, m_player.y, mapWidthPx, mapHeightPx);
+        }
+
+        // attacks & combat
         updateAttacks(TARGET_DT_SEC);
         handleCombat();
     }
 
     void Engine::movePlayerWithCollision(float dtSec)
     {
-        SDL_FPoint vel = m_player.computeVelocity();
-        float desiredDx = vel.x * dtSec;
-        float desiredDy = vel.y * dtSec;
+        game::TileMap &map = m_rooms.currentMap();
 
-        if (desiredDx != 0.0f)
+        SDL_FPoint vel = m_player.computeVelocity();
+        float dx = vel.x * dtSec;
+        float dy = vel.y * dtSec;
+
+        if (dx != 0.0f)
         {
-            float newX = m_player.x + desiredDx;
-            SDL_Rect rectX{ static_cast<int>(newX), static_cast<int>(m_player.y),
-                            game::Player::WIDTH, game::Player::HEIGHT };
-            if (!m_map.rectCollidesSolid(rectX))
+            float newX = m_player.x + dx;
+            SDL_Rect rectX{
+                static_cast<int>(newX),
+                static_cast<int>(m_player.y),
+                game::Player::WIDTH,
+                game::Player::HEIGHT};
+            if (!map.rectCollidesSolid(rectX))
                 m_player.x = newX;
         }
 
-        if (desiredDy != 0.0f)
+        if (dy != 0.0f)
         {
-            float newY = m_player.y + desiredDy;
-            SDL_Rect rectY{ static_cast<int>(m_player.x), static_cast<int>(newY),
-                            game::Player::WIDTH, game::Player::HEIGHT };
-            if (!m_map.rectCollidesSolid(rectY))
+            float newY = m_player.y + dy;
+            SDL_Rect rectY{
+                static_cast<int>(m_player.x),
+                static_cast<int>(newY),
+                game::Player::WIDTH,
+                game::Player::HEIGHT};
+            if (!map.rectCollidesSolid(rectY))
                 m_player.y = newY;
+        }
+    }
+
+    void Engine::handleRoomTransition()
+    {
+        game::TileMap &map = m_rooms.currentMap();
+
+        const int tileSize = game::TileMap::TILE_SIZE;
+        const int mapPixW  = map.width()  * tileSize;
+        const int mapPixH  = map.height() * tileSize;
+
+        // where we spawn the player when switching between rooms
+        const float doorwayX = 7 * tileSize + 4.0f;
+
+        const float topEntranceY    = tileSize * 2.0f;
+        const float bottomEntranceY = mapPixH - tileSize * 2.0f;
+
+        SDL_Rect playerRect{
+            static_cast<int>(m_player.x),
+            static_cast<int>(m_player.y),
+            game::Player::WIDTH,
+            game::Player::HEIGHT};
+
+        // door trigger zones (a little lenient)
+        SDL_Rect northDoorTrigger{
+            6 * tileSize,
+            -8,
+            3 * tileSize,
+            16
+        };
+
+        SDL_Rect southDoorTrigger{
+            6 * tileSize,
+            mapPixH - tileSize,
+            3 * tileSize,
+            tileSize + 8
+        };
+
+        // Try NORTH
+        {
+            if (SDL_HasIntersection(&playerRect, &northDoorTrigger))
+            {
+                int before = m_rooms.currentRoomIndex();
+                m_rooms.goNorth();
+                int after  = m_rooms.currentRoomIndex();
+
+                if (after != before)
+                {
+                    game::TileMap &newMap = m_rooms.currentMap();
+                    int newMapPixH = newMap.height() * tileSize;
+
+                    float newBottomEntranceY = newMapPixH - tileSize * 2.0f;
+                    m_player.x = doorwayX;
+                    m_player.y = newBottomEntranceY;
+
+                    int newMapWidthPx  = newMap.width()  * tileSize;
+                    int newMapHeightPx = newMap.height() * tileSize;
+                    m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
+                }
+                return; // stop here so we don't also trigger south same frame
+            }
+        }
+
+        // Try SOUTH
+        {
+            if (SDL_HasIntersection(&playerRect, &southDoorTrigger))
+            {
+                int before = m_rooms.currentRoomIndex();
+                m_rooms.goSouth();
+                int after  = m_rooms.currentRoomIndex();
+
+                if (after != before)
+                {
+                    game::TileMap &newMap = m_rooms.currentMap();
+
+                    m_player.x = doorwayX;
+                    m_player.y = topEntranceY;
+
+                    int newMapWidthPx  = newMap.width()  * tileSize;
+                    int newMapHeightPx = newMap.height() * tileSize;
+                    m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
+                }
+                return;
+            }
         }
     }
 
@@ -156,23 +294,33 @@ namespace zelda::engine
         int ay = static_cast<int>(m_player.y);
         int w = 12, h = 12;
 
-        if (m_inputUp) ay -= range;
-        else if (m_inputDown) ay += game::Player::HEIGHT;
-        else if (m_inputLeft) ax -= range;
-        else if (m_inputRight) ax += game::Player::WIDTH;
-        else ay += game::Player::HEIGHT;
+        if (m_inputUp)
+            ay -= range;
+        else if (m_inputDown)
+            ay += game::Player::HEIGHT;
+        else if (m_inputLeft)
+            ax -= range;
+        else if (m_inputRight)
+            ax += game::Player::WIDTH;
+        else
+            ay += game::Player::HEIGHT;
 
         m_attacks.emplace_back(ax, ay, w, h);
     }
 
     void Engine::updateAttacks(float dtSec)
     {
-        for (auto& atk : m_attacks)
+        for (auto &atk : m_attacks)
             atk.lifetime -= dtSec;
 
         m_attacks.erase(
-            std::remove_if(m_attacks.begin(), m_attacks.end(),
-                           [](const game::PlayerAttack& a){ return a.isExpired(); }),
+            std::remove_if(
+                m_attacks.begin(),
+                m_attacks.end(),
+                [](const game::PlayerAttack &a)
+                {
+                    return a.isExpired();
+                }),
             m_attacks.end());
     }
 
@@ -181,7 +329,7 @@ namespace zelda::engine
         if (m_enemy.hp <= 0)
             return;
 
-        for (auto& atk : m_attacks)
+        for (auto &atk : m_attacks)
         {
             SDL_Rect eRect = m_enemy.getBounds();
             if (SDL_HasIntersection(&atk.rect, &eRect))
@@ -189,6 +337,7 @@ namespace zelda::engine
                 m_enemy.hp--;
                 if (m_enemy.hp <= 0)
                 {
+                    // hide enemy offscreen when "dead"
                     m_enemy.x = -1000.0f;
                     m_enemy.y = -1000.0f;
                 }
@@ -199,19 +348,90 @@ namespace zelda::engine
 
     void Engine::renderFrame()
     {
+        // clear background
         SDL_SetRenderDrawColor(m_renderer, 8, 8, 12, 255);
         SDL_RenderClear(m_renderer);
 
-        m_map.render(m_renderer);
-        m_enemy.render(m_renderer);
+        game::TileMap &map = m_rooms.currentMap();
 
-        for (auto& atk : m_attacks)
+        SDL_Rect view = m_camera.getViewRect();
+        const int tileSize = game::TileMap::TILE_SIZE;
+        int mapPxW = map.width() * tileSize;
+        int mapPxH = map.height() * tileSize;
+
+        // center map if it's smaller than the window
+        int offsetX = (mapPxW < m_camera.width)  ? (m_camera.width  - mapPxW) / 2 : 0;
+        int offsetY = (mapPxH < m_camera.height) ? (m_camera.height - mapPxH) / 2 : 0;
+
+        bool inRoom1 = (m_rooms.currentRoomIndex() == 1);
+
+        // draw tiles
+        for (int ty = 0; ty < map.height(); ++ty)
         {
-            SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 180);
-            SDL_RenderFillRect(m_renderer, &atk.rect);
+            for (int tx = 0; tx < map.width(); ++tx)
+            {
+                int tileID = map.getTileId(tx, ty);
+
+                SDL_Rect r{
+                    tx * tileSize - view.x + offsetX,
+                    ty * tileSize - view.y + offsetY,
+                    tileSize,
+                    tileSize};
+
+                if (tileID == 1)
+                {
+                    // wall color
+                    if (!inRoom1)
+                        SDL_SetRenderDrawColor(m_renderer, 40, 60, 100, 255); // room0 wall
+                    else
+                        SDL_SetRenderDrawColor(m_renderer, 70, 80, 140, 255); // room1 tint
+                }
+                else
+                {
+                    // floor color
+                    if (!inRoom1)
+                        SDL_SetRenderDrawColor(m_renderer, 20, 20, 28, 255); // room0 floor
+                    else
+                        SDL_SetRenderDrawColor(m_renderer, 32, 28, 40, 255); // room1 floor tint
+                }
+
+                SDL_RenderFillRect(m_renderer, &r);
+            }
         }
 
-        m_player.render(m_renderer);
+        // draw enemy if alive
+        if (m_enemy.hp > 0)
+        {
+            SDL_Rect e{
+                static_cast<int>(m_enemy.x) - view.x + offsetX,
+                static_cast<int>(m_enemy.y) - view.y + offsetY,
+                game::Enemy::WIDTH,
+                game::Enemy::HEIGHT};
+            SDL_SetRenderDrawColor(m_renderer, 180, 40, 40, 255);
+            SDL_RenderFillRect(m_renderer, &e);
+        }
+
+        // draw active attack hitboxes
+        for (auto &atk : m_attacks)
+        {
+            SDL_Rect r{
+                atk.rect.x - view.x + offsetX,
+                atk.rect.y - view.y + offsetY,
+                atk.rect.w,
+                atk.rect.h};
+            SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 180);
+            SDL_RenderFillRect(m_renderer, &r);
+        }
+
+        // draw player
+        SDL_Rect p{
+            static_cast<int>(m_player.x) - view.x + offsetX,
+            static_cast<int>(m_player.y) - view.y + offsetY,
+            game::Player::WIDTH,
+            game::Player::HEIGHT};
+        SDL_SetRenderDrawColor(m_renderer, 200, 220, 64, 255);
+        SDL_RenderFillRect(m_renderer, &p);
+
         SDL_RenderPresent(m_renderer);
     }
 
