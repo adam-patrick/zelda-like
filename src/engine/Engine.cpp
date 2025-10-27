@@ -1,31 +1,19 @@
 #include "Engine.h"
-#include <cstdio>
-#include <algorithm> // std::min
+#include <algorithm>
 
 namespace zelda::engine
 {
-    Engine::Engine()
-    {
-    }
-
-    Engine::~Engine()
-    {
-        shutdown();
-    }
+    Engine::Engine() {}
+    Engine::~Engine() { shutdown(); }
 
     bool Engine::init(const char* title, int windowWidth, int windowHeight, bool fullscreen)
     {
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS) != 0)
-        {
-            std::printf("SDL_Init failed: %s\n", SDL_GetError());
             return false;
-        }
 
         Uint32 flags = SDL_WINDOW_SHOWN;
         if (fullscreen)
-        {
             flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-        }
 
         m_window = SDL_CreateWindow(
             title,
@@ -35,38 +23,24 @@ namespace zelda::engine
             windowHeight,
             flags
         );
-
-        if (!m_window)
-        {
-            std::printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-            shutdown();
-            return false;
-        }
+        if (!m_window) return false;
 
         m_renderer = SDL_CreateRenderer(
             m_window,
             -1,
             SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
         );
-
-        if (!m_renderer)
-        {
-            std::printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
-            shutdown();
-            return false;
-        }
+        if (!m_renderer) return false;
 
         m_windowWidth  = windowWidth;
         m_windowHeight = windowHeight;
 
-        // Put player roughly in the center of the initial window.
-        m_player.x = (m_windowWidth  / 2.0f) - (zelda::game::Player::WIDTH  / 2.0f);
-        m_player.y = (m_windowHeight / 2.0f) - (zelda::game::Player::HEIGHT / 2.0f);
+        // spawn inside map area
+        m_player.x = 64.0f;
+        m_player.y = 64.0f;
 
-        // Setup timing
         m_lastTickMs = SDL_GetTicks();
         m_accumulatorSec = 0.0f;
-
         m_running = true;
         return true;
     }
@@ -76,7 +50,6 @@ namespace zelda::engine
         while (m_running)
         {
             uint32_t frameStartMs = SDL_GetTicks();
-
             processInput();
 
             uint32_t nowMs = SDL_GetTicks();
@@ -85,11 +58,8 @@ namespace zelda::engine
 
             float frameDeltaSec = static_cast<float>(frameDeltaMs) / 1000.0f;
             m_accumulatorSec += frameDeltaSec;
-
             if (m_accumulatorSec > 0.25f)
-            {
                 m_accumulatorSec = 0.25f;
-            }
 
             while (m_accumulatorSec >= TARGET_DT_SEC)
             {
@@ -98,83 +68,80 @@ namespace zelda::engine
             }
 
             renderFrame();
-
             capFrameRate(frameStartMs);
         }
     }
 
     void Engine::shutdown()
     {
-        if (m_renderer)
-        {
-            SDL_DestroyRenderer(m_renderer);
-            m_renderer = nullptr;
-        }
-
-        if (m_window)
-        {
-            SDL_DestroyWindow(m_window);
-            m_window = nullptr;
-        }
-
+        if (m_renderer) { SDL_DestroyRenderer(m_renderer); m_renderer = nullptr; }
+        if (m_window)   { SDL_DestroyWindow(m_window);     m_window = nullptr; }
         SDL_Quit();
     }
 
     void Engine::processInput()
     {
-        // Handle events like quit/esc
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
-            switch (e.type)
-            {
-                case SDL_QUIT:
-                    m_running = false;
-                    break;
-                case SDL_KEYDOWN:
-                    if (e.key.keysym.sym == SDLK_ESCAPE)
-                    {
-                        m_running = false;
-                    }
-                    break;
-                default:
-                    break;
-            }
+            if (e.type == SDL_QUIT)
+                m_running = false;
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)
+                m_running = false;
         }
 
-        // Poll current keyboard state for arrows
         const Uint8* keys = SDL_GetKeyboardState(nullptr);
-
-        m_inputUp    = (keys[SDL_SCANCODE_UP]    != 0);
-        m_inputDown  = (keys[SDL_SCANCODE_DOWN]  != 0);
-        m_inputLeft  = (keys[SDL_SCANCODE_LEFT]  != 0);
-        m_inputRight = (keys[SDL_SCANCODE_RIGHT] != 0);
+        m_inputUp    = keys[SDL_SCANCODE_UP]    || keys[SDL_SCANCODE_W];
+        m_inputDown  = keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S];
+        m_inputLeft  = keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_A];
+        m_inputRight = keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
     }
 
     void Engine::updateFixedStep()
     {
-        // Push current input state into player for this tick
         m_player.moveUp    = m_inputUp;
         m_player.moveDown  = m_inputDown;
         m_player.moveLeft  = m_inputLeft;
         m_player.moveRight = m_inputRight;
 
-        // Advance player by fixed dt
-        m_player.update(TARGET_DT_SEC);
+        movePlayerWithCollision(TARGET_DT_SEC);
+    }
 
-        // Later:
-        // - world collision
-        // - camera updates
-        // - enemy logic
+    void Engine::movePlayerWithCollision(float dtSec)
+    {
+        SDL_FPoint vel = m_player.computeVelocity();
+        float desiredDx = vel.x * dtSec;
+        float desiredDy = vel.y * dtSec;
+
+        // X axis
+        if (desiredDx != 0.0f)
+        {
+            float newX = m_player.x + desiredDx;
+            SDL_Rect rectX{ static_cast<int>(newX), static_cast<int>(m_player.y),
+                            zelda::game::Player::WIDTH, zelda::game::Player::HEIGHT };
+
+            if (!m_map.rectCollidesSolid(rectX))
+                m_player.x = newX;
+        }
+
+        // Y axis
+        if (desiredDy != 0.0f)
+        {
+            float newY = m_player.y + desiredDy;
+            SDL_Rect rectY{ static_cast<int>(m_player.x), static_cast<int>(newY),
+                            zelda::game::Player::WIDTH, zelda::game::Player::HEIGHT };
+
+            if (!m_map.rectCollidesSolid(rectY))
+                m_player.y = newY;
+        }
     }
 
     void Engine::renderFrame()
     {
-        // Clear background
-        SDL_SetRenderDrawColor(m_renderer, 32, 32, 48, 255);
+        SDL_SetRenderDrawColor(m_renderer, 8, 8, 12, 255);
         SDL_RenderClear(m_renderer);
 
-        // Draw player
+        m_map.render(m_renderer);
         m_player.render(m_renderer);
 
         SDL_RenderPresent(m_renderer);
@@ -184,9 +151,6 @@ namespace zelda::engine
     {
         uint32_t frameTimeMs = SDL_GetTicks() - frameStartMs;
         if (frameTimeMs < FRAME_MS_CAP)
-        {
             SDL_Delay(FRAME_MS_CAP - frameTimeMs);
-        }
     }
-
-} // namespace zelda::engine
+}
