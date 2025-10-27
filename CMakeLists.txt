@@ -17,11 +17,15 @@ set(SOURCES
     src/main.cpp
     src/engine/Engine.cpp
     src/game/Player.cpp
+    src/game/TileMap.cpp
+    src/game/Enemy.cpp       # <--
 )
 
 set(HEADERS
     src/engine/Engine.h
     src/game/Player.h
+    src/game/TileMap.h
+    src/game/Enemy.h         # <--
 )
 
 add_executable(zelda_like ${SOURCES} ${HEADERS})

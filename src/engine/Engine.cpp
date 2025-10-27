@@ -1,6 +1,8 @@
 #include "Engine.h"
 #include <algorithm>
 
+using namespace zelda;
+
 namespace zelda::engine
 {
     Engine::Engine() {}
@@ -21,21 +23,18 @@ namespace zelda::engine
             SDL_WINDOWPOS_CENTERED,
             windowWidth,
             windowHeight,
-            flags
-        );
+            flags);
         if (!m_window) return false;
 
         m_renderer = SDL_CreateRenderer(
             m_window,
             -1,
-            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-        );
+            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
         if (!m_renderer) return false;
 
         m_windowWidth  = windowWidth;
         m_windowHeight = windowHeight;
 
-        // spawn inside map area
         m_player.x = 64.0f;
         m_player.y = 64.0f;
 
@@ -95,6 +94,14 @@ namespace zelda::engine
         m_inputDown  = keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S];
         m_inputLeft  = keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_A];
         m_inputRight = keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
+
+        bool attackPressed = keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_J];
+        if (attackPressed && m_player.attackCooldown <= 0.0f)
+        {
+            m_player.attacking = true;
+            m_player.attackCooldown = 0.3f;
+            spawnPlayerAttack();
+        }
     }
 
     void Engine::updateFixedStep()
@@ -105,6 +112,16 @@ namespace zelda::engine
         m_player.moveRight = m_inputRight;
 
         movePlayerWithCollision(TARGET_DT_SEC);
+
+        if (m_player.attackCooldown > 0.0f)
+        {
+            m_player.attackCooldown -= TARGET_DT_SEC;
+            if (m_player.attackCooldown <= 0.0f)
+                m_player.attacking = false;
+        }
+
+        updateAttacks(TARGET_DT_SEC);
+        handleCombat();
     }
 
     void Engine::movePlayerWithCollision(float dtSec)
@@ -113,26 +130,70 @@ namespace zelda::engine
         float desiredDx = vel.x * dtSec;
         float desiredDy = vel.y * dtSec;
 
-        // X axis
         if (desiredDx != 0.0f)
         {
             float newX = m_player.x + desiredDx;
             SDL_Rect rectX{ static_cast<int>(newX), static_cast<int>(m_player.y),
-                            zelda::game::Player::WIDTH, zelda::game::Player::HEIGHT };
-
+                            game::Player::WIDTH, game::Player::HEIGHT };
             if (!m_map.rectCollidesSolid(rectX))
                 m_player.x = newX;
         }
 
-        // Y axis
         if (desiredDy != 0.0f)
         {
             float newY = m_player.y + desiredDy;
             SDL_Rect rectY{ static_cast<int>(m_player.x), static_cast<int>(newY),
-                            zelda::game::Player::WIDTH, zelda::game::Player::HEIGHT };
-
+                            game::Player::WIDTH, game::Player::HEIGHT };
             if (!m_map.rectCollidesSolid(rectY))
                 m_player.y = newY;
+        }
+    }
+
+    void Engine::spawnPlayerAttack()
+    {
+        const int range = 18;
+        int ax = static_cast<int>(m_player.x);
+        int ay = static_cast<int>(m_player.y);
+        int w = 12, h = 12;
+
+        if (m_inputUp) ay -= range;
+        else if (m_inputDown) ay += game::Player::HEIGHT;
+        else if (m_inputLeft) ax -= range;
+        else if (m_inputRight) ax += game::Player::WIDTH;
+        else ay += game::Player::HEIGHT;
+
+        m_attacks.emplace_back(ax, ay, w, h);
+    }
+
+    void Engine::updateAttacks(float dtSec)
+    {
+        for (auto& atk : m_attacks)
+            atk.lifetime -= dtSec;
+
+        m_attacks.erase(
+            std::remove_if(m_attacks.begin(), m_attacks.end(),
+                           [](const game::PlayerAttack& a){ return a.isExpired(); }),
+            m_attacks.end());
+    }
+
+    void Engine::handleCombat()
+    {
+        if (m_enemy.hp <= 0)
+            return;
+
+        for (auto& atk : m_attacks)
+        {
+            SDL_Rect eRect = m_enemy.getBounds();
+            if (SDL_HasIntersection(&atk.rect, &eRect))
+            {
+                m_enemy.hp--;
+                if (m_enemy.hp <= 0)
+                {
+                    m_enemy.x = -1000.0f;
+                    m_enemy.y = -1000.0f;
+                }
+                break;
+            }
         }
     }
 
@@ -142,8 +203,15 @@ namespace zelda::engine
         SDL_RenderClear(m_renderer);
 
         m_map.render(m_renderer);
-        m_player.render(m_renderer);
+        m_enemy.render(m_renderer);
 
+        for (auto& atk : m_attacks)
+        {
+            SDL_SetRenderDrawColor(m_renderer, 255, 255, 0, 180);
+            SDL_RenderFillRect(m_renderer, &atk.rect);
+        }
+
+        m_player.render(m_renderer);
         SDL_RenderPresent(m_renderer);
     }
 

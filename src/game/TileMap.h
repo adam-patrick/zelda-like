@@ -17,7 +17,6 @@ namespace zelda::game
         int height() const { return m_height; }
 
         void render(SDL_Renderer* renderer) const;
-
         bool isSolidAtTile(int tx, int ty) const;
         bool rectCollidesSolid(const SDL_Rect& rect) const;
 

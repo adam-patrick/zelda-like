@@ -2,8 +2,12 @@
 
 #include <SDL.h>
 #include <cstdint>
+#include <vector>
+
 #include "../game/Player.h"
+#include "../game/Enemy.h"
 #include "../game/TileMap.h"
+#include "../game/PlayerAttack.h"
 
 namespace zelda::engine
 {
@@ -27,6 +31,11 @@ namespace zelda::engine
         void capFrameRate(uint32_t frameStartMs);
         void movePlayerWithCollision(float dtSec);
 
+        // combat helpers
+        void spawnPlayerAttack();
+        void updateAttacks(float dtSec);
+        void handleCombat();
+
         bool m_running{false};
         SDL_Window*   m_window{nullptr};
         SDL_Renderer* m_renderer{nullptr};
@@ -39,7 +48,9 @@ namespace zelda::engine
         uint32_t m_lastTickMs{0};
 
         zelda::game::Player  m_player;
+        zelda::game::Enemy   m_enemy;
         zelda::game::TileMap m_map;
+        std::vector<zelda::game::PlayerAttack> m_attacks;
 
         int m_windowWidth{0};
         int m_windowHeight{0};
