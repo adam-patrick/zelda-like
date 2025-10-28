@@ -4,8 +4,9 @@
 int main(int, char**)
 {
     zelda::engine::Engine engine;
-    if (!engine.init("Milestone 6", 640, 480, false))
+    if (!engine.init("Milestone 8", 640, 480, false))
     {
+        SDL_Log("Engine.init() failed");
         return 1;
     }
 

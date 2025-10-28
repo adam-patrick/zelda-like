@@ -7,6 +7,7 @@
 #include "RoomManager.h"
 #include "TileMap.h"
 #include "Camera.h"
+#include "TextureManager.h"
 
 namespace zelda::game {
 
@@ -81,9 +82,6 @@ namespace zelda::game {
             };
         }
     };
-
-    // NOTE: Camera struct used to live here, but now lives in Camera.h
-    // We just include it instead.
 }
 
 namespace zelda::engine
@@ -134,9 +132,10 @@ namespace zelda::engine
         // game state
         zelda::game::Player m_player;
         zelda::game::Enemy  m_enemy;
-        zelda::game::Camera m_camera; // now using the class from Camera.h
+        zelda::game::Camera m_camera;
         std::vector<zelda::game::PlayerAttack> m_attacks;
 
-        zelda::game::RoomManager m_rooms;
+        zelda::game::RoomManager    m_rooms;
+        zelda::game::TextureManager m_textures; // texture cache
     };
 }
