@@ -1,103 +1,142 @@
 #pragma once
 #include <vector>
+#include <array>
+#include <algorithm>
 #include "TileMap.h"
 
 namespace zelda::game
 {
-    // Very simple 2-room vertical dungeon.
-    // Room 0 <-> Room 1.
+    // Milestone 7:
+    // We now support a tiny 2x2 dungeon grid:
+    // (0,0) (1,0)
+    // (0,1) (1,1)
+    //
+    // room coords: (m_roomX, m_roomY)
+    //
+    // We generate all 4 rooms procedurally for now.
+    // Each room gets a different "tintId" so we can color it differently when rendering.
+
     class RoomManager
     {
     public:
         RoomManager()
-        : m_currentIndex(0)
+        : m_roomX(0)
+        , m_roomY(0)
         {
-            m_rooms.reserve(2);
+            for (auto &slot : m_rooms)
+                slot.valid = false;
         }
 
-        // Build two simple rooms so the game always has something to render.
-        // Both rooms start identical unless you tweak them later.
+        struct RoomSlot {
+            bool valid = false;
+            TileMap map;
+            int tintId = 0; // 0,1,2,3 for visual variation
+        };
+
+        // build a 2x2 block of rooms with borders + door gaps
         void debugInitRooms(int w, int h)
         {
-            std::vector<int> tiles;
-            tiles.resize(w * h);
+            // Precompute base tiles for a single room
+            std::vector<int> base;
+            base.resize(w * h);
 
-            // fill with floor (0)
-            std::fill(tiles.begin(), tiles.end(), 0);
+            for (int i = 0; i < w * h; ++i)
+                base[i] = 0; // floor
 
-            // make a solid wall border (1)
+            // Add solid border walls (tile = 1)
             for (int x = 0; x < w; ++x)
             {
-                tiles[x] = 1;                 // top row
-                tiles[x + (h - 1) * w] = 1;   // bottom row
+                base[x] = 1;                   // top
+                base[x + (h - 1) * w] = 1;     // bottom
             }
             for (int y = 0; y < h; ++y)
             {
-                tiles[0 + y * w] = 1;         // left col
-                tiles[(w - 1) + y * w] = 1;   // right col
+                base[0 + y * w] = 1;           // left
+                base[(w - 1) + y * w] = 1;     // right
             }
 
-            // carve door gap in top wall (room 0 north exit / room 1 south entrance)
-            // We'll knock out a 3-tile gap around the middle on top/bottom
+            // Carve gaps (doors) in all 4 directions:
+            // vertical door gap centered horizontally
             const int doorXStart = 6;
             const int doorWidth  = 3;
             for (int dx = 0; dx < doorWidth; ++dx)
             {
-                // top center hole
-                tiles[(doorXStart + dx) + 0 * w] = 0;
-                // bottom center hole
-                tiles[(doorXStart + dx) + (h - 1) * w] = 0;
+                // north/south doors
+                base[(doorXStart + dx) + 0 * w] = 0;           // top gap
+                base[(doorXStart + dx) + (h - 1) * w] = 0;     // bottom gap
             }
 
-            // room 0
-            if (m_rooms.size() < 1)
-                m_rooms.emplace_back();
-            m_rooms[0].load(w, h, tiles);
+            // horizontal door gap centered vertically
+            const int doorYStart = 3;
+            const int doorHeight = 2;
+            for (int dy = 0; dy < doorHeight; ++dy)
+            {
+                // west/east doors
+                base[0 + (doorYStart + dy) * w] = 0;           // left gap
+                base[(w - 1) + (doorYStart + dy) * w] = 0;     // right gap
+            }
 
-            // room 1 (clone for now)
-            if (m_rooms.size() < 2)
-                m_rooms.emplace_back();
-            m_rooms[1].load(w, h, tiles);
+            // Now clone that room into a 2x2 grid with different tintIds
+            // Layout index = (y * 2 + x)
+            for (int y = 0; y < 2; ++y)
+            {
+                for (int x = 0; x < 2; ++x)
+                {
+                    int idx = y * 2 + x;
+                    m_rooms[idx].valid = true;
+                    m_rooms[idx].map.load(w, h, base);
+                    m_rooms[idx].tintId = idx; // 0,1,2,3
+                }
+            }
 
-            // start player in room 0
-            m_currentIndex = 0;
+            // start in top-left room (0,0)
+            m_roomX = 0;
+            m_roomY = 0;
         }
 
-        void setCurrentRoomIndex(int idx)
-        {
-            if (idx < 0) idx = 0;
-            if (idx >= (int)m_rooms.size()) idx = (int)m_rooms.size() - 1;
-            if (idx < 0) idx = 0;
-            m_currentIndex = idx;
-        }
-
-        int currentRoomIndex() const
-        {
-            return m_currentIndex;
-        }
-
+        // Return the active room's tilemap
         TileMap& currentMap()
         {
-            return m_rooms[m_currentIndex];
+            return currentSlot().map;
         }
 
-        // For Milestone 6:
-        // going "north" -> next room index (0 -> 1)
-        void goNorth()
+        // For rendering tint, HUD, debugging, etc.
+        int currentTintId() const
         {
-            if (m_currentIndex + 1 < (int)m_rooms.size())
-                m_currentIndex += 1;
+            return currentSlot().tintId;
         }
 
-        // going "south" -> previous room index (1 -> 0)
-        void goSouth()
-        {
-            if (m_currentIndex - 1 >= 0)
-                m_currentIndex -= 1;
-        }
+        // Where we are in the grid
+        int roomX() const { return m_roomX; }
+        int roomY() const { return m_roomY; }
+
+        // Movement between rooms:
+        void goNorth() { if (m_roomY > 0) m_roomY -= 1; }
+        void goSouth() { if (m_roomY < 1) m_roomY += 1; }
+        void goWest()  { if (m_roomX > 0) m_roomX -= 1; }
+        void goEast()  { if (m_roomX < 1) m_roomX += 1; }
 
     private:
-        std::vector<TileMap> m_rooms;
-        int m_currentIndex;
+        // Map a (roomX, roomY) to a slot index
+        int idx() const
+        {
+            // 2 columns, 2 rows
+            return m_roomY * 2 + m_roomX;
+        }
+
+        RoomSlot& currentSlot()
+        {
+            return m_rooms[idx()];
+        }
+        const RoomSlot& currentSlot() const
+        {
+            return m_rooms[idx()];
+        }
+
+        // 2x2 grid => 4 total
+        std::array<RoomSlot, 4> m_rooms;
+
+        int m_roomX;
+        int m_roomY;
     };
 }

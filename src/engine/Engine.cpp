@@ -49,11 +49,11 @@ namespace zelda::engine
         m_enemy.y = 96.0f;
         m_enemy.hp = 3;
 
-        // --- ROOM SETUP (Milestone 6 baseline) ---
-        // create 2 simple rooms with a border wall and door gaps
+        // --- ROOM SETUP (Milestone 7 baseline) ---
+        // create 2x2 rooms with door gaps on all sides
         m_rooms.debugInitRooms(/*w=*/10, /*h=*/8);
 
-        // sync camera with current room bounds so initial view is valid
+        // sync camera with current room bounds
         {
             game::TileMap &map = m_rooms.currentMap();
             int mapWidthPx  = map.width()  * game::TileMap::TILE_SIZE;
@@ -146,7 +146,7 @@ namespace zelda::engine
         // move with collision
         movePlayerWithCollision(TARGET_DT_SEC);
 
-        // attempt room transition (north/south doors)
+        // attempt room transition in any of 4 directions
         handleRoomTransition();
 
         // attack cooldown timer
@@ -211,11 +211,15 @@ namespace zelda::engine
         const int mapPixW  = map.width()  * tileSize;
         const int mapPixH  = map.height() * tileSize;
 
-        // where we spawn the player when switching between rooms
-        const float doorwayX = 7 * tileSize + 4.0f;
-
+        // spawn locations when entering from each side
+        const float doorwayCenterX = 7 * tileSize + 4.0f;
         const float topEntranceY    = tileSize * 2.0f;
         const float bottomEntranceY = mapPixH - tileSize * 2.0f;
+
+        // For horizontal entrances, we'll reuse vertical-ish math:
+        const float leftEntranceX  = tileSize * 2.0f;
+        const float rightEntranceX = mapPixW - tileSize * 2.0f;
+        const float midY           = 3 * tileSize + 4.0f; // near door gap height
 
         SDL_Rect playerRect{
             static_cast<int>(m_player.x),
@@ -223,7 +227,8 @@ namespace zelda::engine
             game::Player::WIDTH,
             game::Player::HEIGHT};
 
-        // door trigger zones (a little lenient)
+        // Door trigger zones (N, S, W, E). We leave them generous to make sure we catch overlap.
+
         SDL_Rect northDoorTrigger{
             6 * tileSize,
             -8,
@@ -238,52 +243,104 @@ namespace zelda::engine
             tileSize + 8
         };
 
+        SDL_Rect westDoorTrigger{
+            -8,
+            3 * tileSize,
+            16,
+            2 * tileSize
+        };
+
+        SDL_Rect eastDoorTrigger{
+            mapPixW - tileSize,
+            3 * tileSize,
+            tileSize + 8,
+            2 * tileSize
+        };
+
         // Try NORTH
+        if (SDL_HasIntersection(&playerRect, &northDoorTrigger))
         {
-            if (SDL_HasIntersection(&playerRect, &northDoorTrigger))
+            int beforeX = m_rooms.roomX();
+            int beforeY = m_rooms.roomY();
+            m_rooms.goNorth();
+            if (m_rooms.roomX() != beforeX || m_rooms.roomY() != beforeY)
             {
-                int before = m_rooms.currentRoomIndex();
-                m_rooms.goNorth();
-                int after  = m_rooms.currentRoomIndex();
+                // entered from south of the new room
+                game::TileMap &newMap = m_rooms.currentMap();
+                int newMapPixH = newMap.height() * tileSize;
 
-                if (after != before)
-                {
-                    game::TileMap &newMap = m_rooms.currentMap();
-                    int newMapPixH = newMap.height() * tileSize;
+                float newBottomEntranceY = newMapPixH - tileSize * 2.0f;
+                m_player.x = doorwayCenterX;
+                m_player.y = newBottomEntranceY;
 
-                    float newBottomEntranceY = newMapPixH - tileSize * 2.0f;
-                    m_player.x = doorwayX;
-                    m_player.y = newBottomEntranceY;
-
-                    int newMapWidthPx  = newMap.width()  * tileSize;
-                    int newMapHeightPx = newMap.height() * tileSize;
-                    m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
-                }
-                return; // stop here so we don't also trigger south same frame
+                int newMapWidthPx  = newMap.width()  * tileSize;
+                int newMapHeightPx = newMap.height() * tileSize;
+                m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
             }
+            return;
         }
 
         // Try SOUTH
+        if (SDL_HasIntersection(&playerRect, &southDoorTrigger))
         {
-            if (SDL_HasIntersection(&playerRect, &southDoorTrigger))
+            int beforeX = m_rooms.roomX();
+            int beforeY = m_rooms.roomY();
+            m_rooms.goSouth();
+            if (m_rooms.roomX() != beforeX || m_rooms.roomY() != beforeY)
             {
-                int before = m_rooms.currentRoomIndex();
-                m_rooms.goSouth();
-                int after  = m_rooms.currentRoomIndex();
+                // entered from north of the new room
+                game::TileMap &newMap = m_rooms.currentMap();
+                m_player.x = doorwayCenterX;
+                m_player.y = topEntranceY;
 
-                if (after != before)
-                {
-                    game::TileMap &newMap = m_rooms.currentMap();
-
-                    m_player.x = doorwayX;
-                    m_player.y = topEntranceY;
-
-                    int newMapWidthPx  = newMap.width()  * tileSize;
-                    int newMapHeightPx = newMap.height() * tileSize;
-                    m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
-                }
-                return;
+                int newMapWidthPx  = newMap.width()  * tileSize;
+                int newMapHeightPx = newMap.height() * tileSize;
+                m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
             }
+            return;
+        }
+
+        // Try WEST
+        if (SDL_HasIntersection(&playerRect, &westDoorTrigger))
+        {
+            int beforeX = m_rooms.roomX();
+            int beforeY = m_rooms.roomY();
+            m_rooms.goWest();
+            if (m_rooms.roomX() != beforeX || m_rooms.roomY() != beforeY)
+            {
+                // entered from east of the new room
+                game::TileMap &newMap = m_rooms.currentMap();
+                int newMapPixW = newMap.width() * tileSize;
+
+                m_player.x = newMapPixW - tileSize * 2.0f;
+                m_player.y = midY;
+
+                int newMapWidthPx  = newMap.width()  * tileSize;
+                int newMapHeightPx = newMap.height() * tileSize;
+                m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
+            }
+            return;
+        }
+
+        // Try EAST
+        if (SDL_HasIntersection(&playerRect, &eastDoorTrigger))
+        {
+            int beforeX = m_rooms.roomX();
+            int beforeY = m_rooms.roomY();
+            m_rooms.goEast();
+            if (m_rooms.roomX() != beforeX || m_rooms.roomY() != beforeY)
+            {
+                // entered from west of the new room
+                game::TileMap &newMap = m_rooms.currentMap();
+
+                m_player.x = leftEntranceX;
+                m_player.y = midY;
+
+                int newMapWidthPx  = newMap.width()  * tileSize;
+                int newMapHeightPx = newMap.height() * tileSize;
+                m_camera.follow(m_player.x, m_player.y, newMapWidthPx, newMapHeightPx);
+            }
+            return;
         }
     }
 
@@ -337,7 +394,6 @@ namespace zelda::engine
                 m_enemy.hp--;
                 if (m_enemy.hp <= 0)
                 {
-                    // hide enemy offscreen when "dead"
                     m_enemy.x = -1000.0f;
                     m_enemy.y = -1000.0f;
                 }
@@ -359,11 +415,26 @@ namespace zelda::engine
         int mapPxW = map.width() * tileSize;
         int mapPxH = map.height() * tileSize;
 
-        // center map if it's smaller than the window
         int offsetX = (mapPxW < m_camera.width)  ? (m_camera.width  - mapPxW) / 2 : 0;
         int offsetY = (mapPxH < m_camera.height) ? (m_camera.height - mapPxH) / 2 : 0;
 
-        bool inRoom1 = (m_rooms.currentRoomIndex() == 1);
+        // Different tint per room using tintId 0..3
+        int tintId = m_rooms.currentTintId();
+        // We'll slightly vary wall/floor colors by tintId
+        SDL_Color wallColors[4] = {
+            {40, 60,100,255},
+            {70, 80,140,255},
+            {90, 40,110,255},
+            {40,100, 70,255}
+        };
+        SDL_Color floorColors[4] = {
+            {20,20,28,255},
+            {32,28,40,255},
+            {28,20,28,255},
+            {20,28,24,255}
+        };
+        SDL_Color wallC  = wallColors [tintId % 4];
+        SDL_Color floorC = floorColors[tintId % 4];
 
         // draw tiles
         for (int ty = 0; ty < map.height(); ++ty)
@@ -380,19 +451,11 @@ namespace zelda::engine
 
                 if (tileID == 1)
                 {
-                    // wall color
-                    if (!inRoom1)
-                        SDL_SetRenderDrawColor(m_renderer, 40, 60, 100, 255); // room0 wall
-                    else
-                        SDL_SetRenderDrawColor(m_renderer, 70, 80, 140, 255); // room1 tint
+                    SDL_SetRenderDrawColor(m_renderer, wallC.r, wallC.g, wallC.b, wallC.a);
                 }
                 else
                 {
-                    // floor color
-                    if (!inRoom1)
-                        SDL_SetRenderDrawColor(m_renderer, 20, 20, 28, 255); // room0 floor
-                    else
-                        SDL_SetRenderDrawColor(m_renderer, 32, 28, 40, 255); // room1 floor tint
+                    SDL_SetRenderDrawColor(m_renderer, floorC.r, floorC.g, floorC.b, floorC.a);
                 }
 
                 SDL_RenderFillRect(m_renderer, &r);
@@ -411,7 +474,7 @@ namespace zelda::engine
             SDL_RenderFillRect(m_renderer, &e);
         }
 
-        // draw active attack hitboxes
+        // draw attack hitboxes
         for (auto &atk : m_attacks)
         {
             SDL_Rect r{
