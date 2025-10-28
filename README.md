@@ -1,32 +1,34 @@
 # Zelda-Like Engine
 
-A small 2D adventure engine built in C++17 with SDL2. The long-term goal is a classic top-down Zelda-style game, all written by hand (no Unity/Godot). This README describes the current working state at the end of Milestone 6.
+A custom 2D adventure engine built in C++17 with SDL2.  
+The goal: a hand-coded top-down Zelda-style game, developed milestone by milestone.
 
 ================================
-Milestone 6 Status (Current Build)
+Milestone 7 Status (Current Build)
 ================================
 
-Milestone 6 is our first stable playable slice. The engine now:
-- Opens an SDL2 window and runs a main loop
-- Uses a fixed timestep update (60 FPS target)
-- Reads keyboard input
+Milestone 7 introduces a full 2×2 dungeon grid and movement between rooms in all four directions.
+
+The engine now:
+- Opens an SDL2 window and runs a fixed 60 FPS loop
+- Handles keyboard input:
   - Move: W / A / S / D or Arrow Keys
   - Attack: Space or J
   - Quit: Esc
-- Moves a player character and blocks movement against solid tiles
-- Spawns and updates a short-lived attack hitbox for basic melee
-- Has a test enemy you can hit and "kill"
-- Supports transitioning between two rooms (north/south door gaps)
-- Has a camera that follows the player and clamps to the room bounds
-- Renders using solid-colored rectangles (no textures yet)
+- Moves a player and checks collision against walls
+- Spawns attack hitboxes for melee swings
+- Has a test enemy that can be hit and removed
+- Supports transitions north/south/east/west between rooms
+- Has a 2×2 dungeon grid (4 total rooms)
+- Applies a unique color tint per room
+- Keeps the camera centered on the player and clamped to room bounds
+- Renders everything with solid-color rectangles (no textures yet)
 
-This is our engine baseline going forward.
+This is our stable “multi-room navigation” baseline.
 
 -------------
 Project Layout
 -------------
-
-All gameplay/engine code currently lives under src/engine/.
 
 src/
   main.cpp
@@ -39,81 +41,74 @@ src/
     RoomManager.cpp
     TileMap.h
 
-Summary of responsibilities:
+Summary:
 
 Engine
-- Owns init(), run(), shutdown()
-- Handles input, fixed-step update, rendering
-- Manages player, enemy, attacks
-- Asks RoomManager for the current TileMap
-- Calls Camera to follow the player and clamp view
-- Handles room transitions (north/south doorway logic)
+- Main game loop (init/run/shutdown)
+- Handles input, updates, and rendering
+- Manages player, enemy, attacks, camera, and room transitions
 
 Camera
-- Holds camera x/y and viewport size
-- Follows the player position
-- Clamps so we don't scroll past the room edges
-- Exposes getViewRect() so render code knows what part of the world to draw
+- Tracks viewport position
+- Follows player while clamping to room bounds
 
 RoomManager
-- Holds a small list of rooms (right now: 2 test rooms)
-- Exposes currentMap()
-- goNorth() / goSouth() to change active room index
-- debugInitRooms() builds simple rooms in code at startup so there's always something to render
+- Now holds a 2×2 grid of rooms instead of a single list
+- Provides currentMap(), currentTintId(), and goNorth/ South/ East/ West
+- Generates four test rooms with door gaps on each side
 
 TileMap
-- A tile grid for a single room
-- Each tile is just an int: 0 = floor (walkable), 1 = wall (blocked)
-- rectCollidesSolid() is used for movement blocking
-- getTileId() is used for render color
-- TILE_SIZE = 16px
+- Stores tile grid (0 = floor, 1 = wall)
+- Provides collision and tile queries
 
 Player / Enemy / Attack
-- Player is a solid-color rectangle with movement speed, cooldown for attacks, etc.
-- Enemy is a solid-color rectangle with HP. When HP <= 0, we push it offscreen.
-- PlayerAttack is just a short-lived hitbox rectangle that damages the enemy if they overlap.
+- Player: movement, speed, attack cooldown
+- Enemy: solid block with HP (disappears on death)
+- Attack: short-lived hitbox rectangles
 
+----------------
 Controls
---------
-Move:    W / A / S / D or Arrow Keys
-Attack:  Space or J
-Quit:    Esc
+----------------
+Move:    W / A / S / D or Arrow Keys  
+Attack:  Space or J  
+Quit:    Esc  
 
-Build Instructions (Linux / SDL2 dev packages)
-----------------------------------------------
-
-1. Install SDL2 development headers (example for Debian/Ubuntu style distros):
+----------------
+Build Instructions (Linux)
+----------------
+1. Install SDL2 development headers  
+   ```bash
    sudo apt install libsdl2-dev
-
-2. Configure and build:
+   ```
+2. Configure and build  
+   ```bash
    mkdir build
    cd build
    cmake ..
    make
-
-3. Run:
+   ```
+3. Run  
+   ```bash
    ./zelda_like
+   ```
 
-CMake expects these sources:
+CMake expects:
 - src/main.cpp
 - src/engine/Engine.cpp
 - src/engine/Camera.cpp
 - src/engine/RoomManager.cpp
-Plus the headers in src/engine/.
+and all headers under src/engine/.
 
----------------------
-Next Milestone Goals
----------------------
-
-Planned next steps (Milestone 7+):
-- Replace colored rectangles with textured tiles and sprites
-- Add east/west room transitions
-- Start basic enemy movement / patrol AI
-- Optional: HUD (player health, etc.)
+----------------
+Next Milestone (8)
+----------------
+- Replace color rectangles with textured sprites and tiles
+- Add basic enemy movement and chase behavior
+- Begin HUD overlay (player health, enemy HP)
+- Introduce a lightweight asset manager for textures
 
 -----------------
 License / Notice
 -----------------
-
-© 2025 Adam. All Rights Reserved.
-For personal/educational use while developing this project. Not licensed for redistribution/commercial use yet.
+© 2025 Adam. All Rights Reserved.  
+For personal/educational use while developing this project.
